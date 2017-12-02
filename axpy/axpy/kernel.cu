@@ -66,7 +66,7 @@ int main() {
     int num_block = (size + block_size - 1) / block_size;
 
     clock_t start_gpu = clock();
-    saxpy_kernel << < num_block, block_size >> > (size, alpha, x_gpu, incx, y_gpu, incy);
+    saxpy_kernel <<< num_block, block_size >>> (size, alpha, x_gpu, incx, y_gpu, incy);
     cudaDeviceSynchronize();
     clock_t finish_gpu = clock();
 
