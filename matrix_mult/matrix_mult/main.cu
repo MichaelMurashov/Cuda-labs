@@ -11,20 +11,22 @@ const int block_size = 16;
 
 __global__
 void kernel(int n, const float *a, const float *b, float *c) {
-    int bx = blockIdx.x;
-    int by = blockIdx.y;
-    int tx = threadIdx.x;
-    int ty = threadIdx.y;
+    int   bx = blockIdx.x;     // block index
+    int   by = blockIdx.y;
+    int   tx = threadIdx.x;        // thread index
+    int   ty = threadIdx.y;
+    float sum = 0.0f;           // computed subelement
+    int   ia = n * block_size * by + n * ty;   // a [i][0]
+    int   ib = block_size * bx + tx;
 
-    float sum = 0.0f;
-
-    int ia = n * block_size * by + n * ty;
-    int ib = block_size * bx + tx;
-
+    // Multiply the two matrices together;
     for (int k = 0; k < n; k++)
-        sum += a[ia + k] * b[ib + k * n];
+        sum += a[ia + k] * b[ib + k*n];
 
+    // Write the block sub-matrix to global memory;
+    // each thread writes one element
     int ic = n * block_size * by + block_size * bx;
+
     c[ic + n * ty + tx] = sum;
 }
 
@@ -66,7 +68,7 @@ float cpuMultMat(int n, const float *a, const float *b, float*c) {
 }
 
 int main() {
-    const int n = 4;
+    const int n = 64;
 
     float *a = new float[n * n], *b = new float[n * n], *c = new float[n * n];
     float *resultGPU = new float[n * n];
@@ -92,20 +94,22 @@ int main() {
 
     cudaMemcpy(resultGPU, dev_c, n * n * sizeof(float), cudaMemcpyDeviceToHost);
 
-    for (int i = 0; i < n * n; i++)
-        cout << c[i] << ' ';
-    cout << endl;
+    //for (int i = 0; i < n * n; i++)
+    //    cout << c[i] << ' ';
+    //cout << endl;
 
-    for (int i = 0; i < n * n; i++)
-        cout << resultGPU[i] << ' ';
-    cout << endl;
+    //for (int i = 0; i < n * n; i++)
+    //    cout << resultGPU[i] << ' ';
+    //cout << endl;
 
     for (int i = 0; i < n * n; i++)
         if (c[i] != resultGPU[i]) {
             cout << "Matrixs are not equal!" << endl;
-            system("pause");
-            exit(1);
+            break;
         }
+
+    cout << "gpu time: " << gpuTime << endl
+        << "cpu time: " << cpuTime << endl;
 
     cudaFree(dev_a); cudaFree(dev_b); cudaFree(dev_c);
     free(a); free(b); free(c);
