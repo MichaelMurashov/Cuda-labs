@@ -2,6 +2,7 @@
 #include <time.h>
 #include <omp.h>
 #include <iomanip>
+#include <cmath>
 
 #include "device_launch_parameters.h"
 #include "cuda_runtime.h"
@@ -51,25 +52,41 @@ float sharedMultMat(int n, const float *dev_a, const float *dev_b, float *dev_c)
     dim3 threads(block_size, block_size);
     dim3 blocks(n / threads.x, n / threads.y);
 
-    clock_t start = clock();
+    //clock_t start = clock();
+    cudaEvent_t start, stop;
+    float gpuTime = 0.0f;
+
+    cudaEventCreate(&start);
+    cudaEventCreate(&stop);
+
+    cudaEventRecord(start, 0);
 
     shared_kernel <<< blocks, threads >>> (n, dev_a, dev_b, dev_c);
     cudaDeviceSynchronize();
 
-    clock_t finish = clock();
+    cudaEventSynchronize(stop);
+    cudaEventElapsedTime(&gpuTime, start, stop);
 
-    return (float)(finish - start) / CLOCKS_PER_SEC;
+    //clock_t finish = clock();
+
+    //return (float)(finish - start) / CLOCKS_PER_SEC;
+
+    cudaEventDestroy(start); cudaEventDestroy(stop);
+
+    return gpuTime;
 }
 
 __global__
-void kernel(int n, const float *a, const float *b, float *c) {
+void kernel_t(int n, const float *a, const float *b, float *c) {
+    
+    printf("from kernel\n");
     int   bx = blockIdx.x;
     int   by = blockIdx.y;
     int   tx = threadIdx.x;
     int   ty = threadIdx.y;
 
     float sum = 0.0f;
-
+    
     int   ia = n * block_size * by + n * ty;
     int   ib = block_size * bx + tx;
 
@@ -81,24 +98,34 @@ void kernel(int n, const float *a, const float *b, float *c) {
 }
 
 float multMat(int n, const float *dev_a, const float *dev_b, float *dev_c) {
-    //int num_block = (n + block_size - 1) / block_size;
+    dim3 dimBlock(block_size, block_size);
+    dim3 dimGrid(n / dimBlock.x, n / dimBlock.y);
 
-    dim3 threads(block_size, block_size);
-    dim3 blocks(n / threads.x, n / threads.y);
+    cudaEvent_t start, stop;
+    float gpuTime = 0.0f;
 
-    clock_t start = clock();
+    cudaEventCreate(&start);
+    cudaEventCreate(&stop);
 
-    kernel <<< blocks, threads >>> (n, dev_a, dev_b, dev_c);
-    cudaDeviceSynchronize();
+    cudaEventRecord(start, 0);
 
-    clock_t finish = clock();
+    int num_block = (n + block_size - 1) / block_size;
+    kernel_t <<< num_block, block_size >>> (n, dev_a, dev_b, dev_c);
+    //cudaDeviceSynchronize();
 
-    return (float)(finish - start) / CLOCKS_PER_SEC;
+    //kernel_t <<< dimGrid, dimBlock >>> (n, dev_a, dev_b, dev_c);
+    //cudaDeviceSynchronize();
+
+    cudaEventSynchronize(stop);
+    cudaEventElapsedTime(&gpuTime, start, stop);
+
+    cudaEventDestroy(start); cudaEventDestroy(stop);
+
+    return gpuTime;
 }
 
 float cpuMultMat(int n, const float *a, const float *b, float*c) {
     int i, j, k;
-    int NestedThreadsNum = 2;
 
     clock_t start = clock();
 
@@ -117,7 +144,7 @@ float cpuMultMat(int n, const float *a, const float *b, float*c) {
 }
 
 int main() {
-    const int n = 2048;
+    const int n = 128;
     const float e = 1e-5;
 
     float *a = new float[n * n], *b = new float[n * n], *c = new float[n * n];
@@ -146,23 +173,37 @@ int main() {
 
     float sharedGpuTime = sharedMultMat(n, dev_a, dev_b, dev_c);
 
-    cudaMemcpy(resultSharedGPU, dev_c, n * n * sizeof(float), cudaMemcpyDeviceToHost);
+   // cudaMemcpy(resultSharedGPU, dev_c, n * n * sizeof(float), cudaMemcpyDeviceToHost);
+
+    //for (int i = 0; i < n * n; i++)
+    //    cout << c[i] << " ";
+    //cout << endl;
+
+    //for (int i = 0; i < n * n; i++)
+    //    cout << resultGPU[i] << " ";
+    //cout << endl;
+
+    //for (int i = 0; i < n * n; i++)
+    //    cout << resultSharedGPU[i] << " ";
+    //cout << endl;
+
 
     for (int i = 0; i < n * n; i++)
-        if (std::abs(c[i] - resultGPU[i]) < e) {
+        if (std::abs(c[i] - resultGPU[i]) > e) {
             cout << "Matrixs cpu and gpu are not equal!" << endl;
             break;
         }
 
-    for (int i = 0; i < n * n; i++)
-        if (std::abs(c[i] - resultSharedGPU[i]) < e) {
-            cout << "Matrixs cpu and shared_gpu are not equal!" << endl;
-            break;
-        }
+    //for (int i = 0; i < n * n; i++) {
+    //    if (fabsf(c[i] - resultSharedGPU[i]) > e) {
+    //        cout << "Matrixs cpu and shared_gpu are not equal!" << endl;
+    //        break;
+    //    }
+    //}
 
-    cout << fixed << "gpu time: " << setprecision(5) << gpuTime << endl
-        << "shared gpu time: " << sharedGpuTime << endl
-        << "cpu time: " << cpuTime << endl;
+    //cout << fixed << "gpu time: " << setprecision(10) << gpuTime << endl
+    //    << "shared gpu time: " << sharedGpuTime << endl
+    //    << "cpu time: " << cpuTime << endl;
 
     cudaFree(dev_a); cudaFree(dev_b); cudaFree(dev_c);
     delete[]a; free(b); free(c);
