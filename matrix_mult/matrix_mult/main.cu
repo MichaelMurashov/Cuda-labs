@@ -1,13 +1,15 @@
 #include <iostream>
 #include <time.h>
 #include <omp.h>
+#include <iomanip>
 
 #include "device_launch_parameters.h"
 #include "cuda_runtime.h"
+#include "cuda.h"
 
 using namespace std;
 
-const int block_size = 16;
+#define block_size 64
 
 __global__
 void shared_kernel(int n, const float *a, const float *b, float *c) {
@@ -96,19 +98,16 @@ float multMat(int n, const float *dev_a, const float *dev_b, float *dev_c) {
 
 float cpuMultMat(int n, const float *a, const float *b, float*c) {
     int i, j, k;
-    int NestedThreadsNum = 2;
-
-    omp_set_nested(true);
-    omp_set_num_threads(NestedThreadsNum);
 
     clock_t start = clock();
 
-    #pragma omp parallel for private (j, k)
     for (i = 0; i < n; i++)
-        #pragma omp parallel for private (k)
-        for (j = 0; j < n; j++)
+        for (j = 0; j < n; j++) {
+            float elem = 0.0f;
             for (k = 0; k < n; k++)
-                c[i * n + j] += a[i * n + k] * b[k * n + j];
+                elem += a[i * n + k] * b[k * n + j];
+            c[i * n + j] = elem;
+        }
 
     clock_t finish = clock();
 
@@ -116,7 +115,8 @@ float cpuMultMat(int n, const float *a, const float *b, float*c) {
 }
 
 int main() {
-    const int n = 64;
+    const int n = 2048;
+    const float e = 0.00001;
 
     float *a = new float[n * n], *b = new float[n * n], *c = new float[n * n];
     float *resultGPU = new float[n * n], *resultSharedGPU = new float[n * n];
@@ -138,6 +138,9 @@ int main() {
 
     float cpuTime = cpuMultMat(n, a, b, c);
 
+    cout << fixed << setprecision(8) 
+        << "cpu time: " << cpuTime << endl;
+
     float gpuTime = multMat(n, dev_a, dev_b, dev_c);
 
     cudaMemcpy(resultGPU, dev_c, n * n * sizeof(float), cudaMemcpyDeviceToHost);
@@ -154,24 +157,24 @@ int main() {
     //    cout << resultGPU[i] << ' ';
     //cout << endl;
 
-    for (int i = 0; i < n * n; i++)
-        if (c[i] != resultGPU[i]) {
+    /*for (int i = 0; i < n * n; i++)
+        if (std::abs(c[i] - resultGPU[i]) < e) {
             cout << "Matrixs cpu and gpu are not equal!" << endl;
             break;
         }
 
     for (int i = 0; i < n * n; i++)
-        if (c[i] != resultSharedGPU[i]) {
+        if (std::abs(c[i] - resultSharedGPU[i]) < e) {
             cout << "Matrixs cpu and shared_gpu are not equal!" << endl;
             break;
-        }
+        }*/
 
-    cout << "gpu time: " << gpuTime << endl
+    cout << fixed << "gpu time: " << setprecision(8) << gpuTime << endl
         << "shared gpu time: " << sharedGpuTime << endl
         << "cpu time: " << cpuTime << endl;
 
     cudaFree(dev_a); cudaFree(dev_b); cudaFree(dev_c);
-    free(a); free(b); free(c);
+    delete[]a; free(b); free(c);
     system("pause");
 
     return 0;
